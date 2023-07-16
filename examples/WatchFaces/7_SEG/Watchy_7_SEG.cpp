@@ -1,12 +1,20 @@
 #include "Watchy_7_SEG.h"
 
-#define DARKMODE true
+#define DARKMODE false
 
 const uint8_t BATTERY_SEGMENT_WIDTH = 7;
 const uint8_t BATTERY_SEGMENT_HEIGHT = 11;
 const uint8_t BATTERY_SEGMENT_SPACING = 9;
 const uint8_t WEATHER_ICON_WIDTH = 48;
 const uint8_t WEATHER_ICON_HEIGHT = 32;
+
+const int apiInterval = 5;
+RTC_DATA_ATTR int apiIntervalCounter = -1;
+RTC_DATA_ATTR char apiDataCache[16];  // must be char array to use RTC_DATA_ATTR
+
+RTC_DATA_ATTR char apiDataWordCache[16];
+RTC_DATA_ATTR char apiDataMeaningCache[20];
+
 
 void Watchy7SEG::drawWatchFace(){
     display.fillScreen(DARKMODE ? GxEPD_BLACK : GxEPD_WHITE);
@@ -70,15 +78,75 @@ void Watchy7SEG::drawDate(){
     display.setCursor(5, 150);
     display.println(tmYearToCalendar(currentTime.Year));// offset from 1970, since year is stored in uint8_t
 }
+
+String request() {
+  HTTPClient http;
+  http.setConnectTimeout(3000);
+  String weatherQueryURL = "http://167.172.128.163:8088/api/iot/v1/random_word";
+  http.begin(weatherQueryURL.c_str());
+  int httpResponseCode = http.GET();
+  if (httpResponseCode == 200) {
+      return http.getString();
+  }
+  return "";
+}
+
 void Watchy7SEG::drawSteps(){
-    // reset step counter at midnight
-    if (currentTime.Hour == 0 && currentTime.Minute == 0){
-      sensor.resetStepCounter();
+    //-- reset step counter at midnight
+    // if (currentTime.Hour == 0 && currentTime.Minute == 0){
+    //   sensor.resetStepCounter();
+    // }
+    // uint32_t stepCount = sensor.getCounter();
+    // display.drawBitmap(10, 165, steps, 19, 23, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
+    // display.setCursor(35, 190);
+    // display.println(stepCount);
+
+    display.setFont(&FreeMonoBold9pt7b);
+    if (apiIntervalCounter < 0) {
+      //-1 on first run, set to apiInterval
+      apiIntervalCounter = apiInterval;
     }
-    uint32_t stepCount = sensor.getCounter();
-    display.drawBitmap(10, 165, steps, 19, 23, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
-    display.setCursor(35, 190);
-    display.println(stepCount);
+    if (apiIntervalCounter >= apiInterval && connectWiFi()) {
+      String apiResult = request();
+
+      if (apiResult == "") {
+        display.setCursor(5, 170);
+        display.println("API request error");
+        return;
+      }
+
+      JSONVar obj     = JSON.parse(apiResult);
+      String word = JSONVar::stringify(obj["word"]);
+
+      word = word.substring(1, word.length()-1);  // remove quote
+      String meaning = JSONVar::stringify(obj["meaning"]);
+      if (meaning.length() > 18) {
+        meaning = meaning.substring(1, 18);
+      } else {
+        meaning = meaning.substring(1, meaning.length()-1);
+      }
+
+      word.toCharArray(apiDataWordCache, word.length()+1);
+      meaning.toCharArray(apiDataMeaningCache, 19);
+
+      display.setCursor(5, 170);
+      display.println(word);
+      display.setCursor(5, 190);
+      display.println(meaning);
+
+      apiIntervalCounter = 0;
+    } else {
+      apiIntervalCounter++;
+
+      display.setCursor(5, 170);
+      display.println(String(apiDataWordCache));
+      display.setCursor(5, 190);
+      display.println(String(apiDataMeaningCache));
+
+      display.setCursor(190, 170);
+      display.println("*");
+    }
+    
 }
 void Watchy7SEG::drawBattery(){
     display.drawBitmap(154, 73, battery, 37, 21, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
