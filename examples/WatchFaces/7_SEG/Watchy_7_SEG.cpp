@@ -8,7 +8,7 @@ const uint8_t BATTERY_SEGMENT_SPACING = 9;
 const uint8_t WEATHER_ICON_WIDTH = 48;
 const uint8_t WEATHER_ICON_HEIGHT = 32;
 
-const int apiInterval = 5;
+const int apiInterval = 15;  // minutes
 RTC_DATA_ATTR int apiIntervalCounter = -1;
 RTC_DATA_ATTR char apiDataCache[16];  // must be char array to use RTC_DATA_ATTR
 
@@ -169,6 +169,15 @@ void Watchy7SEG::drawBattery(){
     for(int8_t batterySegments = 0; batterySegments < batteryLevel; batterySegments++){
         display.fillRect(159 + (batterySegments * BATTERY_SEGMENT_SPACING), 78, BATTERY_SEGMENT_WIDTH, BATTERY_SEGMENT_HEIGHT, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
     }
+
+    int8_t batteryPercentLevel = 0;
+    if (VBAT >= 3.3) {
+        batteryPercentLevel = 100.0*(VBAT-3.3)/0.9;
+    }
+    display.setFont(&FreeMonoBold9pt7b);
+    display.setCursor(150, 106);
+    display.print(batteryPercentLevel);
+    display.print("%");
 }
 
 void Watchy7SEG::drawWeather(){
