@@ -8,12 +8,12 @@ const uint8_t BATTERY_SEGMENT_SPACING = 9;
 const uint8_t WEATHER_ICON_WIDTH = 48;
 const uint8_t WEATHER_ICON_HEIGHT = 32;
 
-const int apiInterval = 15;  // minutes
+const int apiInterval = 20;  // minutes
 RTC_DATA_ATTR int apiIntervalCounter = -1;
 RTC_DATA_ATTR char apiDataCache[16];  // must be char array to use RTC_DATA_ATTR
 
 RTC_DATA_ATTR char apiDataWordCache[16];
-RTC_DATA_ATTR char apiDataMeaningCache[20];
+RTC_DATA_ATTR char apiDataMeaningCache[36];
 
 
 void Watchy7SEG::drawWatchFace(){
@@ -21,7 +21,8 @@ void Watchy7SEG::drawWatchFace(){
     display.setTextColor(DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
     drawTime();
     drawDate();
-    drawSteps();
+    //drawSteps();
+    drawVocab();
     drawWeather();
     drawBattery();
     display.drawBitmap(120, 77, WIFI_CONFIGURED ? wifi : wifioff, 26, 18, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
@@ -75,13 +76,24 @@ void Watchy7SEG::drawDate(){
     display.print("0");
     }
     display.println(currentTime.Day);
-    display.setCursor(5, 150);
-    display.println(tmYearToCalendar(currentTime.Year));// offset from 1970, since year is stored in uint8_t
+    // display.setCursor(5, 150);
+    // display.println(tmYearToCalendar(currentTime.Year));// offset from 1970, since year is stored in uint8_t
+}
+
+void Watchy7SEG::drawSteps(){
+    // -- reset step counter at midnight
+    if (currentTime.Hour == 0 && currentTime.Minute == 0){
+      sensor.resetStepCounter();
+    }
+    uint32_t stepCount = sensor.getCounter();
+    display.drawBitmap(10, 165, steps, 19, 23, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
+    display.setCursor(35, 190);
+    display.println(stepCount);
 }
 
 String request() {
   HTTPClient http;
-  http.setConnectTimeout(3000);
+  http.setConnectTimeout(2000);
   String weatherQueryURL = "http://167.172.128.163:8088/api/iot/v1/random_word";
   http.begin(weatherQueryURL.c_str());
   int httpResponseCode = http.GET();
@@ -91,16 +103,7 @@ String request() {
   return "";
 }
 
-void Watchy7SEG::drawSteps(){
-    //-- reset step counter at midnight
-    // if (currentTime.Hour == 0 && currentTime.Minute == 0){
-    //   sensor.resetStepCounter();
-    // }
-    // uint32_t stepCount = sensor.getCounter();
-    // display.drawBitmap(10, 165, steps, 19, 23, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
-    // display.setCursor(35, 190);
-    // display.println(stepCount);
-
+void Watchy7SEG::drawVocab(){
     display.setFont(&FreeMonoBold9pt7b);
     if (apiIntervalCounter < 0) {
       //-1 on first run, set to apiInterval
@@ -120,30 +123,46 @@ void Watchy7SEG::drawSteps(){
 
       word = word.substring(1, word.length()-1);  // remove quote
       String meaning = JSONVar::stringify(obj["meaning"]);
+      meaning = meaning.substring(1, meaning.length()-1);
+      String meaningLine1 = "";
+      String meaningLine2 = "";
       if (meaning.length() > 18) {
-        meaning = meaning.substring(1, 18);
+        meaningLine1 = meaning.substring(0, 17);
+        meaningLine2 = meaning.substring(17, min(34, int(meaning.length())));
       } else {
-        meaning = meaning.substring(1, meaning.length()-1);
+        meaningLine1 = meaning;
       }
 
       word.toCharArray(apiDataWordCache, word.length()+1);
-      meaning.toCharArray(apiDataMeaningCache, 19);
+      meaning.toCharArray(apiDataMeaningCache, 35);
 
-      display.setCursor(5, 170);
+      display.setCursor(5, 150);
       display.println(word);
+      display.setCursor(5, 170);
+      display.println(meaningLine1);
+
       display.setCursor(5, 190);
-      display.println(meaning);
+      display.println(meaningLine2);
 
       apiIntervalCounter = 0;
     } else {
       apiIntervalCounter++;
 
-      display.setCursor(5, 170);
+      display.setCursor(5, 150);
       display.println(String(apiDataWordCache));
-      display.setCursor(5, 190);
-      display.println(String(apiDataMeaningCache));
 
-      display.setCursor(190, 170);
+      String cachedMeaning = String(apiDataMeaningCache);
+      if (cachedMeaning.length() > 18) {
+        display.setCursor(5, 170);
+        display.println(cachedMeaning.substring(0, 17));
+        display.setCursor(5, 190);
+        display.println(cachedMeaning.substring(17, min(34, int(cachedMeaning.length()))));
+      } else {
+        display.setCursor(5, 170);
+        display.println(cachedMeaning);
+      }
+
+      display.setCursor(190, 160);
       display.println("*");
     }
     
@@ -171,8 +190,8 @@ void Watchy7SEG::drawBattery(){
     }
 
     int8_t batteryPercentLevel = 0;
-    if (VBAT >= 3.3) {
-        batteryPercentLevel = 100.0*(VBAT-3.3)/0.9;
+    if (VBAT >= 3.7) {
+        batteryPercentLevel = 100.0*(VBAT-3.7)/0.5;
     }
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(150, 106);
@@ -187,12 +206,14 @@ void Watchy7SEG::drawWeather(){
     int8_t temperature = currentWeather.temperature;
     int16_t weatherConditionCode = currentWeather.weatherConditionCode;
 
-    display.setFont(&DSEG7_Classic_Regular_39);
+    //display.setFont(&DSEG7_Classic_Regular_39);
+    display.setFont(&DSEG7_Classic_Bold_25);
     int16_t  x1, y1;
     uint16_t w, h;
     display.getTextBounds(String(temperature), 0, 0, &x1, &y1, &w, &h);
     if(159 - w - x1 > 87){
-        display.setCursor(159 - w - x1, 150);
+        //display.setCursor(159 - w - x1, 150);
+        display.setCursor(159 - w - x1, 136);
     }else{
         display.setFont(&DSEG7_Classic_Bold_25);
         display.getTextBounds(String(temperature), 0, 0, &x1, &y1, &w, &h);
