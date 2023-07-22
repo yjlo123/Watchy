@@ -191,7 +191,7 @@ void Watchy7SEG::drawBattery(){
 
     int8_t batteryPercentLevel = 0;
     if (VBAT >= 3.7) {
-        batteryPercentLevel = 100.0*(VBAT-3.7)/0.5;
+        batteryPercentLevel = 100.0*(VBAT-3.7)/0.6;
     }
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(150, 106);
@@ -242,5 +242,6 @@ void Watchy7SEG::drawWeather(){
     weatherIcon = thunderstorm;
     }else
     return;
-    display.drawBitmap(145, 158, weatherIcon, WEATHER_ICON_WIDTH, WEATHER_ICON_HEIGHT, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
+    //display.drawBitmap(145, 158, weatherIcon, WEATHER_ICON_WIDTH, WEATHER_ICON_HEIGHT, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
+    display.drawBitmap(145, 128, weatherIcon, WEATHER_ICON_WIDTH, WEATHER_ICON_HEIGHT, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
 }
