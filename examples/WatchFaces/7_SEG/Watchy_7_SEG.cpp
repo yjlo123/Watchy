@@ -1,6 +1,6 @@
 #include "Watchy_7_SEG.h"
 
-#define DARKMODE true
+#define DARKMODE false
 
 const uint8_t BATTERY_SEGMENT_WIDTH = 7;
 const uint8_t BATTERY_SEGMENT_HEIGHT = 11;
@@ -8,12 +8,21 @@ const uint8_t BATTERY_SEGMENT_SPACING = 9;
 const uint8_t WEATHER_ICON_WIDTH = 48;
 const uint8_t WEATHER_ICON_HEIGHT = 32;
 
+const int apiInterval = 20;  // minutes
+RTC_DATA_ATTR int apiIntervalCounter = -1;
+RTC_DATA_ATTR char apiDataCache[16];  // must be char array to use RTC_DATA_ATTR
+
+RTC_DATA_ATTR char apiDataWordCache[16];
+RTC_DATA_ATTR char apiDataMeaningCache[36];
+
+
 void Watchy7SEG::drawWatchFace(){
     display.fillScreen(DARKMODE ? GxEPD_BLACK : GxEPD_WHITE);
     display.setTextColor(DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
     drawTime();
     drawDate();
-    drawSteps();
+    //drawSteps();
+    drawVocab();
     drawWeather();
     drawBattery();
     display.drawBitmap(120, 77, WIFI_CONFIGURED ? wifi : wifioff, 26, 18, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
@@ -67,11 +76,12 @@ void Watchy7SEG::drawDate(){
     display.print("0");
     }
     display.println(currentTime.Day);
-    display.setCursor(5, 150);
-    display.println(tmYearToCalendar(currentTime.Year));// offset from 1970, since year is stored in uint8_t
+    // display.setCursor(5, 150);
+    // display.println(tmYearToCalendar(currentTime.Year));// offset from 1970, since year is stored in uint8_t
 }
+
 void Watchy7SEG::drawSteps(){
-    // reset step counter at midnight
+    // -- reset step counter at midnight
     if (currentTime.Hour == 0 && currentTime.Minute == 0){
       sensor.resetStepCounter();
     }
@@ -79,6 +89,83 @@ void Watchy7SEG::drawSteps(){
     display.drawBitmap(10, 165, steps, 19, 23, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
     display.setCursor(35, 190);
     display.println(stepCount);
+}
+
+String request() {
+  HTTPClient http;
+  http.setConnectTimeout(2000);
+  String weatherQueryURL = "http://167.172.128.163:8088/api/iot/v1/random_word";
+  http.begin(weatherQueryURL.c_str());
+  int httpResponseCode = http.GET();
+  if (httpResponseCode == 200) {
+      return http.getString();
+  }
+  return "";
+}
+
+void Watchy7SEG::drawVocab(){
+    display.setFont(&FreeMonoBold9pt7b);
+    if (apiIntervalCounter < 0) {
+      //-1 on first run, set to apiInterval
+      apiIntervalCounter = apiInterval;
+    }
+    if (apiIntervalCounter >= apiInterval && connectWiFi()) {
+      String apiResult = request();
+
+      if (apiResult == "") {
+        display.setCursor(5, 170);
+        display.println("API request error");
+        return;
+      }
+
+      JSONVar obj     = JSON.parse(apiResult);
+      String word = JSONVar::stringify(obj["word"]);
+
+      word = word.substring(1, word.length()-1);  // remove quote
+      String meaning = JSONVar::stringify(obj["meaning"]);
+      meaning = meaning.substring(1, meaning.length()-1);
+      String meaningLine1 = "";
+      String meaningLine2 = "";
+      if (meaning.length() > 18) {
+        meaningLine1 = meaning.substring(0, 17);
+        meaningLine2 = meaning.substring(17, min(34, int(meaning.length())));
+      } else {
+        meaningLine1 = meaning;
+      }
+
+      word.toCharArray(apiDataWordCache, word.length()+1);
+      meaning.toCharArray(apiDataMeaningCache, 35);
+
+      display.setCursor(5, 150);
+      display.println(word);
+      display.setCursor(5, 170);
+      display.println(meaningLine1);
+
+      display.setCursor(5, 190);
+      display.println(meaningLine2);
+
+      apiIntervalCounter = 0;
+    } else {
+      apiIntervalCounter++;
+
+      display.setCursor(5, 150);
+      display.println(String(apiDataWordCache));
+
+      String cachedMeaning = String(apiDataMeaningCache);
+      if (cachedMeaning.length() > 18) {
+        display.setCursor(5, 170);
+        display.println(cachedMeaning.substring(0, 17));
+        display.setCursor(5, 190);
+        display.println(cachedMeaning.substring(17, min(34, int(cachedMeaning.length()))));
+      } else {
+        display.setCursor(5, 170);
+        display.println(cachedMeaning);
+      }
+
+      display.setCursor(190, 160);
+      display.println("*");
+    }
+    
 }
 void Watchy7SEG::drawBattery(){
     display.drawBitmap(154, 73, battery, 37, 21, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
@@ -101,6 +188,15 @@ void Watchy7SEG::drawBattery(){
     for(int8_t batterySegments = 0; batterySegments < batteryLevel; batterySegments++){
         display.fillRect(159 + (batterySegments * BATTERY_SEGMENT_SPACING), 78, BATTERY_SEGMENT_WIDTH, BATTERY_SEGMENT_HEIGHT, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
     }
+
+    int8_t batteryPercentLevel = 0;
+    if (VBAT >= 3.7) {
+        batteryPercentLevel = 100.0*(VBAT-3.7)/0.6;
+    }
+    display.setFont(&FreeMonoBold9pt7b);
+    display.setCursor(150, 106);
+    display.print(batteryPercentLevel);
+    display.print("%");
 }
 
 void Watchy7SEG::drawWeather(){
@@ -110,12 +206,14 @@ void Watchy7SEG::drawWeather(){
     int8_t temperature = currentWeather.temperature;
     int16_t weatherConditionCode = currentWeather.weatherConditionCode;
 
-    display.setFont(&DSEG7_Classic_Regular_39);
+    //display.setFont(&DSEG7_Classic_Regular_39);
+    display.setFont(&DSEG7_Classic_Bold_25);
     int16_t  x1, y1;
     uint16_t w, h;
     display.getTextBounds(String(temperature), 0, 0, &x1, &y1, &w, &h);
     if(159 - w - x1 > 87){
-        display.setCursor(159 - w - x1, 150);
+        //display.setCursor(159 - w - x1, 150);
+        display.setCursor(159 - w - x1, 136);
     }else{
         display.setFont(&DSEG7_Classic_Bold_25);
         display.getTextBounds(String(temperature), 0, 0, &x1, &y1, &w, &h);
@@ -144,5 +242,6 @@ void Watchy7SEG::drawWeather(){
     weatherIcon = thunderstorm;
     }else
     return;
-    display.drawBitmap(145, 158, weatherIcon, WEATHER_ICON_WIDTH, WEATHER_ICON_HEIGHT, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
+    //display.drawBitmap(145, 158, weatherIcon, WEATHER_ICON_WIDTH, WEATHER_ICON_HEIGHT, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
+    display.drawBitmap(145, 128, weatherIcon, WEATHER_ICON_WIDTH, WEATHER_ICON_HEIGHT, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
 }

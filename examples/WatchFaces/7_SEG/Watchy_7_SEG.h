@@ -7,6 +7,8 @@
 #include "DSEG7_Classic_Bold_25.h"
 #include "DSEG7_Classic_Regular_39.h"
 #include "icons.h"
+#include <HTTPClient.h>
+#include <Arduino_JSON.h>
 
 class Watchy7SEG : public Watchy{
     using Watchy::Watchy;
@@ -15,6 +17,7 @@ class Watchy7SEG : public Watchy{
         void drawTime();
         void drawDate();
         void drawSteps();
+        void drawVocab();
         void drawWeather();
         void drawBattery();
 };
